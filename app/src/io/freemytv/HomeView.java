@@ -2,6 +2,7 @@ package io.freemytv;
 
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.LauncherApps;
@@ -17,6 +18,8 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.media.tv.TvInputManager;
 import android.os.Handler;
+import android.os.Environment;
+import android.os.StatFs;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.os.UserHandle;
@@ -103,6 +106,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final String[] TAB_KIND = {null, "movie", "tv"};
     private static final int Z_TOP = 4, Z_CARDS = 5;
 
+    private long lastMemoryRead;
+    private String memorySummary = "";
+    private final Paint memoryPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Activity activity;
     private final Scene scene = new Scene();
     private final HomeData data;
@@ -2874,6 +2880,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (!picksOn()) {
             drawClock(c);
             if (HomeData.coinCount() > 0) drawQuotes(c);
+            drawMemorySummary(c, 755);
             return;
         }
         String hello = Ui.tr("For You");
@@ -2907,6 +2914,30 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (int i = 0; i < 3; i++) if (i != top) drawLightCard(c, i);
         if (top >= 0) drawLightCard(c, top);
         if (HomeData.coinCount() > 0) drawQuotes(c);
+        drawMemorySummary(c, 248);
+    }
+
+    /** Compact RAM and storage indicators, refreshed at most every 30 seconds. */
+    private void drawMemorySummary(Canvas c, float baseline) {
+        long now = SystemClock.elapsedRealtime();
+        if (lastMemoryRead == 0 || now - lastMemoryRead > 30_000) {
+            lastMemoryRead = now;
+            try {
+                ActivityManager am = (ActivityManager) getContext().getSystemService(Context.ACTIVITY_SERVICE);
+                if (am != null) {
+                    ActivityManager.MemoryInfo info = new ActivityManager.MemoryInfo();
+                    am.getMemoryInfo(info);
+                    StatFs disk = new StatFs(Environment.getDataDirectory().getAbsolutePath());
+                    memorySummary = "RAM livre: " + (info.availMem / 1048576) + " MB   ·   Espaço livre: "
+                            + (disk.getAvailableBytes() / 1048576) + " MB";
+                }
+            } catch (RuntimeException ignored) { memorySummary = ""; }
+        }
+        if (memorySummary.isEmpty()) return;
+        memoryPaint.setTypeface(Ui.regular);
+        memoryPaint.setTextSize(22 * k);
+        memoryPaint.setColor(tone(L_DIM, 0xFFB0B0B5));
+        c.drawText(memorySummary, MARGIN * k, baseline * k, memoryPaint);
     }
 
     private boolean picksOn() {

@@ -1,6 +1,7 @@
 package io.freemytv;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.content.ComponentName;
 import android.content.Context;
@@ -13,6 +14,10 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Bundle;
+import android.os.Debug;
+import android.os.Process;
+import android.os.StatFs;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -542,8 +547,13 @@ public class SettingsActivity extends Activity {
             JSONObject metrics = state.optJSONObject("metrics");
             JSONObject a = metrics == null ? null : metrics.optJSONObject(HomeMode.ORIGINAL);
             JSONObject b = metrics == null ? null : metrics.optJSONObject(HomeMode.FREE);
+            // Fire OS protects its Home activity, so the normal mode-switch benchmark never runs.
+            // Show live device metrics independently of the ADB-based comparison.
+            if (HomeMode.AMAZON) {
+                b = liveDeviceMetrics(getContext(), b);
+            }
             String[][] rows = {{Ui.tr("Home button"), "homeMs"}, {Ui.tr("Free memory"), "memAvailableMB"},
-                    {Ui.tr("Home screen memory"), "homePssMB"}};
+                    {Ui.tr("Home screen memory"), "homePssMB"}, {Ui.tr("Free storage"), "storageAvailableMB"}};
             for (int i = 0; i < rows.length; i++) {
                 float base = y + (46 + 40 * i) * k;
                 c.drawText(rows[i][0], x, base, cellLabel);
@@ -598,6 +608,33 @@ public class SettingsActivity extends Activity {
             int ba = b >>> 24, br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
             return (Math.round(aa + (ba - aa) * f) << 24) | (Math.round(ar + (br - ar) * f) << 16)
                     | (Math.round(ag + (bg - ag) * f) << 8) | Math.round(ab + (bb - ab) * f);
+        }
+
+        /** Live metrics: no ADB pairing or launcher-switch benchmark required. */
+        private static JSONObject liveDeviceMetrics(Context context, JSONObject previous) {
+            JSONObject m = previous == null ? new JSONObject() : previous;
+            try {
+                ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+                if (am != null) {
+                    ActivityManager.MemoryInfo info = new ActivityManager.MemoryInfo();
+                    am.getMemoryInfo(info);
+                    m.put("memAvailableMB", info.availMem / (1024 * 1024));
+                    // Query the app's own home process, not Amazon's protected process.
+                    java.util.List<ActivityManager.RunningAppProcessInfo> processes = am.getRunningAppProcesses();
+                    if (processes != null) for (ActivityManager.RunningAppProcessInfo p : processes) {
+                        if (!"io.freemytv:home".equals(p.processName)) continue;
+                        Debug.MemoryInfo[] detail = am.getProcessMemoryInfo(new int[]{p.pid});
+                        if (detail != null && detail.length > 0)
+                            m.put("homePssMB", detail[0].getTotalPss() / 1024);
+                        break;
+                    }
+                }
+                StatFs fs = new StatFs(Environment.getDataDirectory().getAbsolutePath());
+                m.put("storageAvailableMB", fs.getAvailableBytes() / (1024 * 1024));
+            } catch (Exception ignored) {
+                // Preserve any previously recorded metrics if Fire OS blocks a query.
+            }
+            return m;
         }
 
         private static String metric(JSONObject m, String key) {

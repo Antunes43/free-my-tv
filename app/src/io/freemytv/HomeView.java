@@ -2915,7 +2915,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (int i = 0; i < 3; i++) if (i != top) drawLightCard(c, i);
         if (top >= 0) drawLightCard(c, top);
         if (HomeData.coinCount() > 0) drawQuotes(c);
-        drawMemorySummary(c, 248);
+        // The recommendation cards occupy this area; avoid overlaying memory meters.
     }
 
     /** Lightweight RAM/storage meters; sample at most once every 30 seconds. */

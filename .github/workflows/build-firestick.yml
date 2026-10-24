@@ -1,0 +1,55 @@
+
+name: Build Free My TV Firestick
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - firestick-build
+    paths:
+      - '.github/workflows/build-firestick.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android tools
+        run: |
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Configure Sao Paulo
+        run: |
+          cp config.example.properties config.properties
+          sed -i 's/^tmdb_region=.*/tmdb_region=BR/' config.properties
+          sed -i 's/^latitude=.*/latitude=-23.5505/' config.properties
+          sed -i 's/^longitude=.*/longitude=-46.6333/' config.properties
+          sed -i 's/^city=.*/city=Sao Paulo/' config.properties
+          sed -i 's/^language=.*/language=pt/' config.properties
+          sed -i 's/^currency=.*/currency=BRL/' config.properties
+          sed -i 's/^temperature=.*/temperature=C/' config.properties
+          sed -i 's/^show_crypto=.*/show_crypto=false/' config.properties
+
+      - name: Build APK
+        run: bash build.sh
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreeMyTV-Firestick-Test
+          path: FreeMyTV.apk
+          retention-days: 7

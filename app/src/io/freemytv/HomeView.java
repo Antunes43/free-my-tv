@@ -1713,8 +1713,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Prices in the configured currency with the 24 h change (green/red, like Apple's Stocks app). */
     private void drawQuotesCard(Canvas c, RectF r) {
         drawerCard(c, r);
-        if (Ui.LEGACY) quotesSnapshot.draw(c, r, drawerCardsKey(), cc -> drawPrices(cc, r));
-        else drawPrices(c, r);
+        // Memory on top, compact crypto quotes below, sharing one glass card.
+        drawMemoryCardSection(c, r);
+        drawPrices(c, r);
     }
 
     /**
@@ -1754,27 +1755,79 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private final Snapshot weatherSnapshot = new Snapshot(), quotesSnapshot = new Snapshot();
 
+    /** Upper half of the quotes glass card: lightweight device usage meters. */
+    private void drawMemoryCardSection(Canvas c, RectF r) {
+        long now = SystemClock.elapsedRealtime();
+        if (lastMemoryRead == 0 || now - lastMemoryRead > 30_000) {
+            lastMemoryRead = now;
+            try {
+                ActivityManager am = (ActivityManager) getContext().getSystemService(Context.ACTIVITY_SERVICE);
+                if (am != null) {
+                    ActivityManager.MemoryInfo info = new ActivityManager.MemoryInfo();
+                    am.getMemoryInfo(info);
+                    StatFs disk = new StatFs(Environment.getDataDirectory().getAbsolutePath());
+                    long totalDisk = disk.getTotalBytes(), freeDisk = disk.getAvailableBytes();
+                    ramUsedFraction = info.totalMem > 0 ? Math.max(0f,
+                            Math.min(1f, 1f - (float) info.availMem / info.totalMem)) : -1f;
+                    storageUsedFraction = totalDisk > 0 ? Math.max(0f,
+                            Math.min(1f, 1f - (float) freeDisk / totalDisk)) : -1f;
+                    memorySummary = "RAM " + (info.availMem / 1048576) + "/" + (info.totalMem / 1048576)
+                            + " MB livres · Disco " + (freeDisk / 1048576) + "/"
+                            + (totalDisk / 1048576) + " MB livres";
+                }
+            } catch (RuntimeException ignored) {
+                memorySummary = "";
+                ramUsedFraction = storageUsedFraction = -1f;
+            }
+        }
+        float x = r.left + 34 * k, right = r.right - 34 * k;
+        memoryPaint.setTypeface(Ui.regular);
+        memoryPaint.setTextSize(22 * k);
+        memoryPaint.setColor(drawerInk(0.95f));
+        c.drawText("Memória e armazenamento", x, r.top + 39 * k, memoryPaint);
+        float width = right - x;
+        drawMeterRow(c, "RAM", ramUsedFraction, x, r.top + 63 * k, width, 0xFF5CA9F5);
+        drawMeterRow(c, "Disco", storageUsedFraction, x, r.top + 103 * k, width, 0xFF4FC5A2);
+        fill.setShader(null);
+        fill.setColor(tone(0x1A000000, 0x24FFFFFF));
+        c.drawRect(x, r.top + 142 * k, right, r.top + 143 * k, fill);
+    }
+
+    private void drawMeterRow(Canvas c, String name, float fraction, float x, float y,
+                              float width, int color) {
+        memoryPaint.setTextSize(18 * k);
+        memoryPaint.setColor(drawerInk(0.8f));
+        c.drawText(name, x, y, memoryPaint);
+        if (fraction >= 0f) {
+            String pct = Math.round(fraction * 100) + "%";
+            c.drawText(pct, x + width - memoryPaint.measureText(pct), y, memoryPaint);
+            drawUsageBar(c, x, y + 8 * k, width, 9 * k, fraction, color);
+        }
+    }
+
+    /** Compact quote rows in the lower half of the shared card. */
     private void drawPrices(Canvas c, RectF r) {
         float x = r.left + 34 * k, right = r.right - 34 * k;
         refreshDrawerText();
-        c.drawText(Ui.tr("Crypto"), x, r.top + 54 * k, cardTitle);
-        c.drawText(staleText, right, r.top + 54 * k, cardDimRight);
-        float cap = Ui.cap(cardText);
+        c.drawText(Ui.tr("Crypto"), x, r.top + 169 * k, cardTitle);
+        c.drawText(staleText, right, r.top + 169 * k, cardDimRight);
         int[] coins = HomeData.active();
-        for (int j = 0; j < coins.length; j++) {
+        float cap = Ui.cap(cardText);
+        int count = Math.min(coins.length, 3);
+        for (int j = 0; j < count; j++) {
             int i = coins[j];
-            float base = r.top + (110 + 52 * j) * k, mid = base - cap / 2;
-            float gw = Glyphs.width(getContext(), HomeData.COINS[i], cap);
-            Glyphs.coin(getContext(), c, HomeData.COINS[i], x + 14 * k, mid, cap, tone(L_DIM, 0xCCFFFFFF));
-            c.drawText(HomeData.coinName(i), x + Math.max(gw, 28 * k) / 2 + 30 * k, base, cardText);
+            float base = r.top + (204 + 32 * j) * k, mid = base - cap / 2;
+            Glyphs.coin(getContext(), c, HomeData.COINS[i], x + 12 * k, mid,
+                    Math.min(cap, 20 * k), tone(L_DIM, 0xCCFFFFFF));
+            c.drawText(HomeData.coinName(i), x + 29 * k, base, cardText);
             c.drawText(priceText[i], right - 128 * k, base, pricePaint);
             double change = data.changes[i];
             if (Double.isNaN(change)) continue;
             int color = change >= 0 ? tone(0xFF248A3D, UP_COLOR) : tone(0xFFD70015, DOWN_COLOR);
-            tmp.set(right - 108 * k, mid - 17 * k, right, mid + 17 * k);
+            tmp.set(right - 108 * k, mid - 11 * k, right, mid + 21 * k);
             fill.setShader(null);
             fill.setColor(Ui.alpha(color, 0.2f));
-            c.drawRoundRect(tmp, 17 * k, 17 * k, fill);
+            c.drawRoundRect(tmp, 12 * k, 12 * k, fill);
             changePaint.setColor(color);
             c.drawText(changeText[i], tmp.centerX(), mid + Ui.halfCap(changePaint), changePaint);
         }

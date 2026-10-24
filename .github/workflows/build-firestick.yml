@@ -1,4 +1,3 @@
-
 name: Build Free My TV Firestick
 
 on:
@@ -9,12 +8,13 @@ on:
     paths:
       - '.github/workflows/build-firestick.yml'
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,9 +28,13 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android tools
+      - name: Install Android build tools
         run: |
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager --install "platforms;android-34" "build-tools;34.0.0"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          java -version
+          ls "$ANDROID_HOME/build-tools/34.0.0/aapt2"
 
       - name: Configure Sao Paulo
         run: |
@@ -44,10 +48,24 @@ jobs:
           sed -i 's/^temperature=.*/temperature=C/' config.properties
           sed -i 's/^show_crypto=.*/show_crypto=false/' config.properties
 
-      - name: Build APK
-        run: bash build.sh
+      - name: Build and record diagnostics
+        shell: bash
+        run: |
+          set -o pipefail
+          bash build.sh 2>&1 | tee build.log
+          test -s FreeMyTV.apk
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Firestick-build-log
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: FreeMyTV-Firestick-Test

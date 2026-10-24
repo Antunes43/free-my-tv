@@ -9,6 +9,7 @@ on:
       - '.github/workflows/build-firestick.yml'
       - 'app/src/io/freemytv/RemoteKeyService.java'
       - 'app/src/io/freemytv/SettingsActivity.java'
+      - 'app/src/io/freemytv/HomeView.java'
 
 permissions:
   contents: read

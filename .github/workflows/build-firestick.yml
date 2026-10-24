@@ -39,8 +39,12 @@ jobs:
           ls "$ANDROID_HOME/build-tools/34.0.0/aapt2"
 
       - name: Configure Sao Paulo
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: |
           cp config.example.properties config.properties
+          if [ -z "$TMDB_API_KEY" ]; then echo 'TMDB_API_KEY secret is missing'; exit 1; fi
+          sed -i "s|^tmdb_key=.*|tmdb_key=$TMDB_API_KEY|" config.properties
           sed -i 's/^tmdb_region=.*/tmdb_region=BR/' config.properties
           sed -i 's/^latitude=.*/latitude=-23.5505/' config.properties
           sed -i 's/^longitude=.*/longitude=-46.6333/' config.properties

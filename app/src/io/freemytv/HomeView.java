@@ -108,6 +108,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private long lastMemoryRead;
     private String memorySummary = "";
+    private float ramUsedFraction = -1f, storageUsedFraction = -1f;
     private final Paint memoryPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Activity activity;
     private final Scene scene = new Scene();
@@ -2917,7 +2918,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         drawMemorySummary(c, 248);
     }
 
-    /** Compact RAM and storage indicators, refreshed at most every 30 seconds. */
+    /** Lightweight RAM/storage meters; sample at most once every 30 seconds. */
     private void drawMemorySummary(Canvas c, float baseline) {
         long now = SystemClock.elapsedRealtime();
         if (lastMemoryRead == 0 || now - lastMemoryRead > 30_000) {
@@ -2928,16 +2929,44 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     ActivityManager.MemoryInfo info = new ActivityManager.MemoryInfo();
                     am.getMemoryInfo(info);
                     StatFs disk = new StatFs(Environment.getDataDirectory().getAbsolutePath());
-                    memorySummary = "RAM livre: " + (info.availMem / 1048576) + " MB   ·   Espaço livre: "
-                            + (disk.getAvailableBytes() / 1048576) + " MB";
+                    long totalDisk = disk.getTotalBytes();
+                    long freeDisk = disk.getAvailableBytes();
+                    ramUsedFraction = info.totalMem > 0
+                            ? Math.max(0f, Math.min(1f, 1f - (float) info.availMem / info.totalMem)) : -1f;
+                    storageUsedFraction = totalDisk > 0
+                            ? Math.max(0f, Math.min(1f, 1f - (float) freeDisk / totalDisk)) : -1f;
+                    memorySummary = "RAM: " + (info.availMem / 1048576) + " MB livres / "
+                            + (info.totalMem / 1048576) + " MB   ·   Armazenamento: "
+                            + (freeDisk / 1048576) + " MB livres / " + (totalDisk / 1048576) + " MB";
                 }
-            } catch (RuntimeException ignored) { memorySummary = ""; }
+            } catch (RuntimeException ignored) {
+                memorySummary = "";
+                ramUsedFraction = storageUsedFraction = -1f;
+            }
         }
         if (memorySummary.isEmpty()) return;
         memoryPaint.setTypeface(Ui.regular);
-        memoryPaint.setTextSize(22 * k);
+        memoryPaint.setTextSize(20 * k);
         memoryPaint.setColor(tone(L_DIM, 0xFFB0B0B5));
-        c.drawText(memorySummary, MARGIN * k, baseline * k, memoryPaint);
+        float x = MARGIN * k;
+        c.drawText(memorySummary, x, baseline * k, memoryPaint);
+        float barY = (baseline + 11) * k;
+        float barWidth = 185 * k;
+        float barHeight = 7 * k;
+        drawUsageBar(c, x, barY, barWidth, barHeight, ramUsedFraction, 0xFF5CA9F5);
+        drawUsageBar(c, x + 215 * k, barY, barWidth, barHeight, storageUsedFraction, 0xFF4FC5A2);
+    }
+
+    private void drawUsageBar(Canvas c, float x, float y, float width, float height,
+                              float usedFraction, int fillColor) {
+        if (usedFraction < 0f) return;
+        memoryPaint.setColor(0x664C5563);
+        c.drawRoundRect(x, y, x + width, y + height, height / 2, height / 2, memoryPaint);
+        if (usedFraction > 0f) {
+            memoryPaint.setColor(fillColor);
+            c.drawRoundRect(x, y, x + width * usedFraction, y + height,
+                    height / 2, height / 2, memoryPaint);
+        }
     }
 
     private boolean picksOn() {

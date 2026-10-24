@@ -55,6 +55,23 @@ jobs:
           sed -i 's/^temperature=.*/temperature=C/' config.properties
           sed -i 's/^show_crypto=.*/show_crypto=false/' config.properties
 
+      # Reuse the signing key between GitHub-hosted builds so Android can update the APK.
+      # GitHub cache may be evicted after inactivity; for permanent retention, save
+      # the key externally and provide it as a repository secret.
+      - name: Restore APK signing key
+        uses: actions/cache@v4
+        with:
+          path: freemytv.keystore
+          key: firestick-apk-signing-v1
+
+      - name: Restore permanent signing key if configured
+        env:
+          FIRESTICK_KEYSTORE_BASE64: ${{ secrets.FIRESTICK_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$FIRESTICK_KEYSTORE_BASE64" ]; then
+            printf '%s' "$FIRESTICK_KEYSTORE_BASE64" | base64 -d > freemytv.keystore
+          fi
+
       - name: Build and record diagnostics
         shell: bash
         run: |
